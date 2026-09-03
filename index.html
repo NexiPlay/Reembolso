@@ -1,71 +1,114 @@
 <!doctype html>
 <!--
-  SITE STANDALONE DE REEMBOLSOS — pra hospedar na Netlify (2026-08-18)
-  =====================================================================
-  Isso é um arquivo completo e independente, sem nenhuma dependência do
-  Bubble a não ser os parâmetros na URL (ver abaixo). Publique ele na
-  Netlify e coloque a URL resultante num <iframe> no elemento HTML do
-  Bubble — ver reembolso.md pra instruções completas.
+  REEMBOLSOS — VARIANTE VISUAL "CONSOLE FINANCEIRO" (2026-08-31)
+  ===================================================================
+  Mesma funcionalidade, campos e regras de negócio do index.html (site
+  principal, hospedado no GitHub Pages) — mesma Data API, mesmo token,
+  mesmos endpoints, mesma lógica de validação e submissão. Só muda a
+  casca visual: paleta, tipografia e componentes inspirados no
+  mockup-2-console-financeiro.html (pasta Recorrência) — KPIs em cards
+  com barra colorida no topo + ícone, números em IBM Plex Mono, filtros
+  em segmented control (pill-group) em vez de chips arredondados, tabela
+  mais densa com tags de status compactas.
 
-  Como esse site sabe quem é o usuário logado:
+  Isto é uma alternativa de estilo pra comparação lado a lado — ainda não
+  hospedada em lugar nenhum. Se for adotada, publicar do mesmo jeito que
+  o index.html (GitHub Pages) e trocar a URL no reembolso-elemento-html.html.
+
+  Como esse site sabe quem é o usuário logado (idêntico ao index.html):
   O Bubble precisa passar isso pela URL do iframe, como query params:
     ?uid=<Current User's unique id>
     &uname=<Current User's Nome completo>
     &cid=<Search for Clientes (Responsavel=Current User):sorted by Created Date descending:first item's unique id>
     &eid=<mesma busca:first item's Empresa's unique id>
-  Sem esses parâmetros, a página carrega mas não consegue filtrar/criar
-  reembolsos (mostra erro pedindo pra recarregar via Bubble).
 -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Reembolsos</title>
+<!-- Sem cache nenhum de propósito: esse site vive dentro de um iframe que
+     fica aberto por muito tempo numa aba do Bubble, e cada deploy novo
+     precisa aparecer na hora, sem precisar de Ctrl+Shift+R manual. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Reembolsos — Console</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
     theme: {
       extend: {
         colors: {
-          'bianca-bg-main':    '#15161b',
-          'bianca-bg-card':    '#1e1f24',
-          'bianca-bg-hover':   '#24262e',
-          'bianca-border':     '#353740',
-          'bianca-brand':      '#09bc8a',
-          'bianca-blue':       '#60a5fa',
-          'bianca-yellow':     '#fbbf24',
-          'bianca-red':        '#ef4444',
-          'bianca-neutral':    '#94a3b8',
-          'bianca-text-primary':   '#ffffff',
-          'bianca-text-secondary': '#81869e',
-          'bianca-bronze':     '#cd7f32',
+          'bianca-bg-main':        '#1b1c21',
+          'bianca-bg-card':        '#202229',
+          'bianca-bg-hover':       '#262b35',
+          'bianca-border':         '#313845',
+          'bianca-border-soft':    '#2b303b',
+          'bianca-brand':          '#09bc8a',
+          'bianca-blue':           '#3a7ef0',
+          'bianca-yellow':         '#f0a020',
+          'bianca-red':            '#e8484a',
+          'bianca-neutral':        '#8fa3b8',
+          'bianca-text-primary':   '#dde4ed',
+          'bianca-text-secondary': '#8fa3b8',
+          'bianca-text-tertiary':  '#4a5a6a',
+          'bianca-bronze':         '#cd7f32',
         },
-        fontFamily: { sans: ['Montserrat', 'system-ui', 'sans-serif'] },
+        fontFamily: {
+          sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+          mono: ['IBM Plex Mono', 'monospace'],
+        },
       }
     }
   };
 </script>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
   /* Sem cor de fundo própria de propósito: o iframe fica transparente e quem
      pinta o fundo é a própria página do Bubble por baixo — "o fundo do site
      é o fundo". Também sem rolagem própria (overflow: hidden): a intenção é
-     que só exista a barra de rolagem normal da página do Bubble, nunca uma
-     segunda barra pertencente só a este documento (ver reembolso.md). */
+     que só exista a barra de rolagem normal da página do Bubble — o iframe
+     cresce pra caber o conteúdo (ver rbNotifyParentHeight no fim do script +
+     reembolso-elemento-html.html), nunca ganha uma barra própria dele. */
   html, body { margin: 0; overflow: hidden; }
-  #rb-page { background-color: transparent; }
+  #rb-page, #rb-page-financeiro { background-color: transparent; }
+  /* Exceção: com um modal aberto, o iframe vira tela cheia (position:fixed,
+     ver reembolso-elemento-html.html) por cima da barra lateral do Bubble —
+     nesse modo a transparência vira problema, porque deixa a página do
+     Bubble por trás aparecer através do fundo escuro semi-transparente do
+     modal (bg-black/70), criando um efeito de conteúdo "duplicado"/fantasma
+     por trás, e o scroll do mouse acaba rolando a página de baixo em vez do
+     modal. Enquanto isso, o fundo precisa ficar opaco de verdade. */
+  body.rb-overlay-active,
+  body.rb-overlay-active #rb-page,
+  body.rb-overlay-active #rb-page-financeiro { background-color: #1b1c21; }
 
-  .glow-brand      { box-shadow: 0 0 16px rgba(9, 188, 138, 0.25); }
-  .glow-yellow     { box-shadow: 0 0 16px rgba(251, 191, 36, 0.18); }
+  .glow-brand  { box-shadow: 0 0 16px rgba(9, 188, 138, 0.22); }
+  .glow-yellow { box-shadow: 0 0 16px rgba(240, 160, 32, 0.18); }
 
   .rb-card { transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
-  .rb-card:hover { transform: translateY(-2px); box-shadow: 0 12px 24px -8px rgba(0,0,0,0.55); border-color: #454854; }
+  .rb-card:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -14px rgba(0,0,0,0.6); border-color: #3f4959; }
   .rb-card-clickable { cursor: pointer; }
 
+  /* Barra colorida no topo do card + chip de ícone — assinatura visual do
+     "console financeiro" (mockup 2), aplicada nos 4 cards de estatística. */
+  .rb-kpi { position: relative; overflow: hidden; }
+  .rb-kpi::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--kpi-color, #09bc8a); opacity: .7;
+    transition: opacity .15s ease, box-shadow .15s ease;
+  }
+  .rb-kpi:hover::before { opacity: 1; box-shadow: 0 0 14px var(--kpi-color, #09bc8a); }
+  .rb-kpi-chip {
+    width: 32px; height: 32px; border-radius: 9px;
+    background: color-mix(in srgb, var(--kpi-color, #09bc8a) 16%, transparent);
+    color: var(--kpi-color, #09bc8a);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .rb-kpi-chip svg { width: 16px; height: 16px; }
+
   .rb-row { transition: background-color 0.15s ease, box-shadow 0.15s ease; }
-  .rb-row:hover { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 4px 14px -6px rgba(0,0,0,0.5); }
-  .rb-chevron { opacity: 0; transition: all 0.15s ease; }
-  .rb-row:hover .rb-chevron { opacity: 1; transform: translateX(2px); color: #fff; }
+  .rb-row:hover { box-shadow: inset 0 0 0 1px rgba(221,228,237,0.05), 0 4px 14px -6px rgba(0,0,0,0.5); }
 
   .rb-btn-primary { transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
   .rb-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 24px rgba(9,188,138,0.4); }
@@ -74,19 +117,22 @@
   .rb-chip { transition: all 0.15s ease; }
   .rb-chip:hover { transform: translateY(-1px); }
 
+  /* Segmented control (pill-group) pros filtros, igual ao toolbar do console
+     financeiro — substitui os chips arredondados individuais do site original. */
+  .rb-pill-group { display: flex; background: #202229; border: 1px solid #313845; border-radius: 12px; padding: 4px; gap: 2px; }
+  .rb-pill-group button { border: none; background: transparent; color: #8fa3b8; font-family: inherit; font-size: 12px; font-weight: 600; padding: 8px 15px; border-radius: 9px; cursor: pointer; transition: all .15s ease; white-space: nowrap; }
+  .rb-pill-group button:hover { color: #dde4ed; }
+  .rb-pill-group button.on { background: #09bc8a; color: #04211a; }
+
   .rb-input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   .rb-input:focus { box-shadow: 0 0 0 3px rgba(9,188,138,0.15); }
 
-  .rb-status-wrap { position: relative; }
-  .rb-timeline { position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .15s, transform .15s, visibility .15s; pointer-events: none; }
-  .rb-status-wrap:hover .rb-timeline { opacity: 1; visibility: visible; transform: translateY(0); }
-
   .rb-dropzone { transition: border-color .15s, background-color .15s, box-shadow .15s; }
-  .rb-dropzone.rb-dragover { border-color: #09bc8a; background-color: rgba(9,188,138,0.06); box-shadow: 0 0 0 3px rgba(9,188,138,0.12); }
+  .rb-dropzone.rb-dragover { border-color: #09bc8a; background-color: rgba(9,188,138,0.07); box-shadow: 0 0 0 3px rgba(9,188,138,0.12); }
 
   .rb-select { position: relative; }
   .rb-select-trigger { transition: border-color .15s, background-color .15s; }
-  .rb-select-trigger:hover { background-color: #24262e; border-color: #4a4d59; }
+  .rb-select-trigger:hover { background-color: #262b35; border-color: #3f4959; }
   /* position:fixed (não absolute) + coordenadas calculadas em JS ao abrir
      (rbToggleSelect) — assim o painel nunca faz o modal por trás precisar
      rolar pra mostrar ele inteiro; só o painel rola dentro de si mesmo. */
@@ -98,13 +144,13 @@
   .rb-check-label { position: relative; }
   .rb-check-input { position: absolute; opacity: 0; width: 0; height: 0; }
   .rb-check-box {
-    width: 20px; height: 20px; border-radius: 8px; border: 1.5px solid #353740;
-    background: #1e1f24; display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 7px; border: 1.5px solid #313845;
+    background: #202229; display: inline-flex; align-items: center; justify-content: center;
     transition: background-color .15s, border-color .15s, box-shadow .15s;
     flex-shrink: 0;
   }
   .rb-check-icon { width: 11px; height: 9px; opacity: 0; transition: opacity .1s; }
-  .rb-check-label:hover .rb-check-box { border-color: #4a4d59; }
+  .rb-check-label:hover .rb-check-box { border-color: #3f4959; }
   .rb-check-input:checked + .rb-check-box { background: #09bc8a; border-color: #09bc8a; }
   .rb-check-input:checked + .rb-check-box .rb-check-icon { opacity: 1; }
   .rb-check-input:focus-visible + .rb-check-box { box-shadow: 0 0 0 3px rgba(9,188,138,0.25); }
@@ -114,7 +160,7 @@
   .rb-overlay { display: none; }
   .rb-overlay.open { display: flex; }
 
-  .rb-step-bar { height: 6px; border-radius: 999px; background: #353740; overflow: hidden; }
+  .rb-step-bar { height: 6px; border-radius: 999px; background: #313845; overflow: hidden; }
   .rb-step-bar-fill { height: 100%; border-radius: 999px; background: #09bc8a; transition: width .3s ease; }
 
   @keyframes rb-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -131,94 +177,107 @@
 
 <div id="rb-toast-container" class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 items-end"></div>
 
-<div id="rb-page" class="p-10 space-y-8">
+<!-- BANNER DE ERRO (mostrado se a URL não veio com os parâmetros do Bubble) — fora
+     dos dois containers de view porque nenhum dos dois chega a carregar sem uid. -->
+<div id="rb-ctx-error" class="rb-hidden bg-bianca-red/10 border border-bianca-red/30 text-bianca-red text-sm rounded-xl p-4 m-10">
+  Esta página precisa ser aberta de dentro do Nexiplay (faltam os parâmetros de identificação do usuário na URL). Se você chegou aqui direto, volte pro app e acesse via a página de Reembolsos.
+</div>
+
+<div id="rb-page" class="rb-hidden p-10 space-y-8">
 
   <!-- HEADER -->
-  <div class="flex items-end justify-between flex-wrap gap-4 rb-enter">
-    <div class="space-y-1">
-      <p class="text-xs text-bianca-text-secondary uppercase tracking-widest font-semibold">Pagamentos</p>
-      <h1 class="text-2xl font-semibold tracking-tight">Reembolsos</h1>
+  <div class="flex items-end justify-between flex-wrap gap-4 pb-5 border-b border-bianca-border rb-enter">
+    <div class="space-y-1.5">
+      <p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-[.18em] font-bold">Pagamentos · Reembolsos</p>
+      <h1 class="text-2xl font-bold tracking-tight">Console de reembolsos</h1>
     </div>
     <button class="rb-btn-primary px-5 py-2.5 rounded-xl bg-bianca-brand text-bianca-bg-main text-sm font-semibold glow-brand" onclick="openRequestModal()">
       Solicitar
     </button>
   </div>
 
-  <!-- BANNER DE ERRO (mostrado se a URL não veio com os parâmetros do Bubble) -->
-  <div id="rb-ctx-error" class="rb-hidden bg-bianca-red/10 border border-bianca-red/30 text-bianca-red text-sm rounded-xl p-4">
-    Esta página precisa ser aberta de dentro do Nexiplay (faltam os parâmetros de identificação do usuário na URL). Se você chegou aqui direto, volte pro app e acesse via a página de Reembolsos.
-  </div>
+  <!-- KPI ROW (calculados no JS a partir do que foi buscado na Data API) -->
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-3.5 rb-enter" style="animation-delay:.05s">
 
-  <!-- STATS (calculados no JS a partir do que foi buscado na Data API) -->
-  <div class="grid grid-cols-1 md:grid-cols-4 gap-4 rb-enter" style="animation-delay:.05s">
-
-    <div class="rb-card bg-bianca-bg-card border border-bianca-border rounded-2xl p-5 space-y-2">
-      <p class="text-xs text-bianca-text-secondary uppercase tracking-wide font-medium">Número de reembolsos</p>
-      <p id="rb-stat-count" class="text-lg font-semibold">—</p>
-    </div>
-
-    <div class="rb-card bg-bianca-bg-card border border-bianca-border rounded-2xl p-5 space-y-2">
-      <p class="text-xs text-bianca-text-secondary uppercase tracking-wide font-medium">Total solicitado em despesas</p>
-      <p id="rb-stat-total" class="text-lg font-semibold">—</p>
-    </div>
-
-    <div class="rb-card bg-bianca-bg-card border border-bianca-border rounded-2xl p-5 space-y-2">
-      <p class="text-xs text-bianca-text-secondary uppercase tracking-wide font-medium">Despesas pagas no mês</p>
-      <p id="rb-stat-paid" class="text-lg font-semibold">—</p>
-      <p id="rb-stat-paid-sub" class="text-xs text-bianca-text-secondary"></p>
-    </div>
-
-    <div class="rb-card rb-card-clickable bg-bianca-bg-card border border-bianca-yellow/30 rounded-2xl p-5 space-y-2 glow-yellow" onclick="openActionPopup()">
+    <div class="rb-card rb-kpi bg-bianca-bg-card border border-bianca-border rounded-2xl p-[18px] space-y-3" style="--kpi-color:#09bc8a;">
       <div class="flex items-center justify-between">
-        <p class="text-xs text-bianca-yellow uppercase tracking-wide font-medium">Precisam de ação sua</p>
-        <span class="text-bianca-yellow text-xs">›</span>
+        <span class="text-[11px] uppercase tracking-wide text-bianca-text-secondary font-bold">Número de reembolsos</span>
+        <div class="rb-kpi-chip"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12M10 4v12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
       </div>
-      <p id="rb-action-count" class="text-lg font-semibold">0</p>
-      <p class="text-xs text-bianca-text-secondary">Clique para ver quais solicitações</p>
+      <p id="rb-stat-count" class="font-mono text-[23px] font-bold">—</p>
+    </div>
+
+    <div class="rb-card rb-kpi bg-bianca-bg-card border border-bianca-border rounded-2xl p-[18px] space-y-3" style="--kpi-color:#3a7ef0;">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] uppercase tracking-wide text-bianca-text-secondary font-bold">Total solicitado em despesas</span>
+        <div class="rb-kpi-chip"><svg viewBox="0 0 24 24" fill="none"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+      <p id="rb-stat-total" class="font-mono text-[23px] font-bold">—</p>
+    </div>
+
+    <div class="rb-card rb-kpi bg-bianca-bg-card border border-bianca-border rounded-2xl p-[18px] space-y-3" style="--kpi-color:#09bc8a;">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] uppercase tracking-wide text-bianca-text-secondary font-bold">Despesas pagas no mês</span>
+        <div class="rb-kpi-chip"><svg viewBox="0 0 20 20" fill="none"><path d="M4 12l4-4 3 3 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+      <p id="rb-stat-paid" class="font-mono text-[23px] font-bold">—</p>
+      <p id="rb-stat-paid-sub" class="text-[10.5px] text-bianca-text-tertiary"></p>
+    </div>
+
+    <div class="rb-card rb-kpi rb-card-clickable bg-bianca-bg-card border border-bianca-yellow/30 rounded-2xl p-[18px] space-y-3 glow-yellow" style="--kpi-color:#f0a020;" onclick="openActionPopup()">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] uppercase tracking-wide text-bianca-yellow font-bold">Precisam de ação sua</span>
+        <div class="rb-kpi-chip"><svg viewBox="0 0 20 20" fill="none"><path d="M10 6v5M10 14h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.6"/></svg></div>
+      </div>
+      <p id="rb-action-count" class="font-mono text-[23px] font-bold">0</p>
+      <p class="text-[10.5px] text-bianca-text-tertiary">Clique para ver quais solicitações</p>
     </div>
 
   </div>
 
-  <!-- FILTERS -->
+  <!-- TOOLBAR / FILTERS -->
   <div class="flex items-center justify-between flex-wrap gap-3 rb-enter" style="animation-delay:.1s">
-    <div class="flex items-center gap-2 flex-wrap" id="rb-filter-bar">
-      <button class="rb-chip rb-filter-btn px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors" data-filter="todos" onclick="setFilter('todos')">Todos</button>
-      <button class="rb-chip rb-filter-btn px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors" data-filter="acao" onclick="setFilter('acao')">Precisa de ação</button>
-      <button class="rb-chip rb-filter-btn px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors" data-filter="andamento" onclick="setFilter('andamento')">Em andamento</button>
-      <button class="rb-chip rb-filter-btn px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors" data-filter="concluidos" onclick="setFilter('concluidos')">Concluídos</button>
+    <div class="rb-pill-group" id="rb-filter-bar">
+      <button class="rb-filter-btn on" data-filter="todos" onclick="setFilter('todos')">Todos</button>
+      <button class="rb-filter-btn" data-filter="acao" onclick="setFilter('acao')">Precisa de ação</button>
+      <button class="rb-filter-btn" data-filter="andamento" onclick="setFilter('andamento')">Em andamento</button>
+      <button class="rb-filter-btn" data-filter="concluidos" onclick="setFilter('concluidos')">Concluídos</button>
     </div>
-    <input id="rb-search" type="text" placeholder="Buscar por nome ou tipo..." oninput="rbOnSearchInput()"
-      class="rb-input px-4 py-2 rounded-xl bg-bianca-bg-card border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-secondary focus:outline-none focus:border-bianca-brand w-64" />
+    <div class="relative">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-[13px] h-[13px] text-bianca-text-tertiary pointer-events-none" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.6"/><path d="M17 17l-3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <input id="rb-search" type="text" placeholder="Buscar por nome ou tipo..." oninput="rbOnSearchInput()"
+        class="rb-input pl-9 pr-4 py-2.5 rounded-xl bg-bianca-bg-card border border-bianca-border text-bianca-text-primary text-[12.5px] placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand w-64" />
+    </div>
   </div>
 
   <!-- TABLE -->
   <div class="bg-bianca-bg-card border border-bianca-border rounded-2xl overflow-hidden rb-enter" style="animation-delay:.15s">
     <div class="px-5 py-4 border-b border-bianca-border flex items-center justify-between">
-      <p class="text-sm font-semibold">Histórico de reembolso</p>
-      <p id="rb-filter-label" class="text-xs text-bianca-text-secondary"></p>
+      <p class="text-[13.5px] font-bold">Histórico de reembolso</p>
+      <p id="rb-filter-label" class="text-[11.5px] text-bianca-text-tertiary font-mono"></p>
     </div>
     <div class="overflow-x-auto">
       <table class="w-full min-w-[760px]">
         <thead>
           <tr class="bg-bianca-bg-hover">
-            <th class="text-left text-[11px] uppercase tracking-widest text-bianca-text-secondary font-semibold px-5 py-3">Nome</th>
-            <th class="text-left text-[11px] uppercase tracking-widest text-bianca-text-secondary font-semibold px-5 py-3">Tipo</th>
-            <th class="text-left text-[11px] uppercase tracking-widest text-bianca-text-secondary font-semibold px-5 py-3">Criação</th>
-            <th class="text-left text-[11px] uppercase tracking-widest text-bianca-text-secondary font-semibold px-5 py-3">Status solicitação</th>
-            <th class="text-left text-[11px] uppercase tracking-widest text-bianca-text-secondary font-semibold px-5 py-3">Apr. solicitação</th>
-            <th class="text-left text-[11px] uppercase tracking-widest text-bianca-text-secondary font-semibold px-5 py-3">Status financeiro</th>
-            <th class="text-left text-[11px] uppercase tracking-widest text-bianca-text-secondary font-semibold px-5 py-3">Apr. financeiro</th>
-            <th class="text-right text-[11px] uppercase tracking-widest text-bianca-text-secondary font-semibold px-5 py-3">Valor</th>
-            <th class="px-5 py-3"></th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2.5">Nome</th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2.5">Tipo</th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2.5">Criação</th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2.5">Status solicitação</th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2.5">Apr. solicitação</th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2.5">Status financeiro</th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2.5">Apr. financeiro</th>
+            <th class="text-right text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2.5">Valor</th>
+            <th class="px-5 py-2.5"></th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-bianca-border" id="rb-tbody"></tbody>
+        <tbody class="divide-y divide-bianca-border-soft" id="rb-tbody"></tbody>
       </table>
     </div>
     <div id="rb-empty" class="rb-hidden px-5 py-10 text-center text-sm text-bianca-text-secondary">Nenhum reembolso encontrado com esse filtro.</div>
     <div id="rb-pagination" class="rb-hidden flex items-center justify-between px-5 py-3 border-t border-bianca-border">
       <button id="rb-page-prev" class="px-3.5 py-1.5 rounded-lg border border-bianca-border text-xs font-medium text-bianca-text-secondary hover:bg-bianca-bg-hover hover:text-bianca-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors" onclick="rbChangePage(-1)">← Anterior</button>
-      <p id="rb-page-label" class="text-xs text-bianca-text-secondary"></p>
+      <p id="rb-page-label" class="text-xs text-bianca-text-secondary font-mono"></p>
       <button id="rb-page-next" class="px-3.5 py-1.5 rounded-lg border border-bianca-border text-xs font-medium text-bianca-text-secondary hover:bg-bianca-bg-hover hover:text-bianca-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors" onclick="rbChangePage(1)">Próxima →</button>
     </div>
   </div>
@@ -227,7 +286,7 @@
   <div id="rb-action-overlay" class="rb-overlay fixed inset-0 bg-black/70 items-center justify-center z-50 p-6">
     <div class="bg-bianca-bg-card border border-bianca-border rounded-2xl overflow-hidden w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl shadow-black/60">
       <div class="flex items-center justify-between px-6 py-5 border-b border-bianca-border shrink-0">
-        <h3 class="text-lg font-semibold">O que precisa da sua ação</h3>
+        <h3 class="text-lg font-bold">O que precisa da sua ação</h3>
         <button class="text-bianca-text-secondary hover:text-bianca-text-primary transition-colors" onclick="closeOverlay('rb-action-overlay')">✕</button>
       </div>
       <div id="rb-action-list" class="p-4 space-y-2 overflow-y-auto"></div>
@@ -238,7 +297,7 @@
   <div id="rb-request-overlay" class="rb-overlay fixed inset-0 bg-black/70 items-center justify-center z-50 p-6">
     <div class="bg-bianca-bg-card border border-bianca-border rounded-2xl overflow-hidden w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl shadow-black/60">
       <div class="flex items-center justify-between px-6 py-5 border-b border-bianca-border shrink-0">
-        <h3 class="text-lg font-semibold">Solicite uma despesa</h3>
+        <h3 class="text-lg font-bold">Solicite uma despesa</h3>
         <button class="text-bianca-text-secondary hover:text-bianca-text-primary transition-colors" onclick="closeOverlay('rb-request-overlay')">✕</button>
       </div>
 
@@ -250,17 +309,17 @@
           <div class="rb-step-bar flex-1"><div id="rb-step-fill-3" class="rb-step-bar-fill" style="width:0%"></div></div>
         </div>
         <div class="flex justify-between mt-2">
-          <p id="rb-step-label-1" class="text-xs font-medium text-bianca-text-primary">1. Aviso</p>
-          <p id="rb-step-label-2" class="text-xs font-medium text-bianca-text-secondary">2. Informações</p>
-          <p id="rb-step-label-3" class="text-xs font-medium text-bianca-text-secondary">3. Tipo</p>
+          <p id="rb-step-label-1" class="text-xs font-semibold text-bianca-text-primary">1. Aviso</p>
+          <p id="rb-step-label-2" class="text-xs font-semibold text-bianca-text-tertiary">2. Informações</p>
+          <p id="rb-step-label-3" class="text-xs font-semibold text-bianca-text-tertiary">3. Tipo</p>
         </div>
       </div>
 
       <div id="rb-step-1" class="p-6 space-y-4">
         <div class="border border-bianca-border rounded-xl p-4 text-xs text-bianca-text-secondary leading-relaxed space-y-2.5">
-          <p><span class="text-bianca-blue font-medium">Transporte</span> — quando a passagem precisar ser comprada, a administração cuida da compra.</p>
-          <p><span class="text-bianca-yellow font-medium">Alimentação</span> — fora da base, limite de R$ 150,00/dia.</p>
-          <p><span class="text-bianca-brand font-medium">Estadia</span> — a administração fica responsável pela reserva.</p>
+          <p><span class="text-bianca-blue font-semibold">Transporte</span> — quando a passagem precisar ser comprada, a administração cuida da compra.</p>
+          <p><span class="text-bianca-yellow font-semibold">Alimentação</span> — fora da base, limite de R$ 150,00/dia.</p>
+          <p><span class="text-bianca-brand font-semibold">Estadia</span> — a administração fica responsável pela reserva.</p>
         </div>
         <p class="text-xs text-bianca-text-secondary">Leia com atenção antes de continuar — essas regras valem para o reembolso que você vai solicitar agora.</p>
         <button class="rb-btn-primary w-full px-5 py-2.5 rounded-xl bg-bianca-brand text-bianca-bg-main text-sm font-semibold glow-brand" onclick="goToStep(2)">Entendi, continuar →</button>
@@ -268,7 +327,7 @@
 
       <div id="rb-step-2" class="rb-hidden p-6 space-y-4">
         <div id="rb-f-tipo" class="rb-select" data-value="Viagem">
-          <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Tipo de reembolso</label>
+          <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Tipo de reembolso</label>
           <button type="button" class="rb-select-trigger w-full mt-1.5 flex items-center justify-between px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-sm text-left" onclick="rbToggleSelect(this)">
             <span class="rb-select-label text-bianca-text-primary">Viagem</span>
             <svg class="rb-select-chevron w-4 h-4 text-bianca-text-secondary" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -280,27 +339,35 @@
           </div>
         </div>
 
+        <div>
+          <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Valor solicitado</label>
+          <div class="relative mt-1.5">
+            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-bianca-text-secondary pointer-events-none">R$</span>
+            <input id="rb-f-valor" type="text" inputmode="decimal" placeholder="0,00" class="rb-input font-mono w-full pl-10 pr-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand" />
+          </div>
+        </div>
+
         <div id="rb-viagem-fields" class="space-y-4">
           <div>
-            <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Quantas pessoas irão viajar?</label>
-            <input id="rb-f-viajantes" placeholder="nº de pessoas" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-secondary focus:outline-none focus:border-bianca-brand" />
+            <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Quantas pessoas irão viajar?</label>
+            <input id="rb-f-viajantes" placeholder="nº de pessoas" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand" />
           </div>
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Data de ida</label>
-              <input id="rb-f-ida" type="date" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm focus:outline-none focus:border-bianca-brand" />
+              <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Data de ida</label>
+              <input id="rb-f-ida" type="date" class="rb-input font-mono w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm focus:outline-none focus:border-bianca-brand" />
             </div>
             <div>
-              <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Data de volta</label>
-              <input id="rb-f-volta" type="date" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm focus:outline-none focus:border-bianca-brand" />
+              <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Data de volta</label>
+              <input id="rb-f-volta" type="date" class="rb-input font-mono w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm focus:outline-none focus:border-bianca-brand" />
             </div>
           </div>
 
           <div id="rb-f-objetivo" class="rb-select" data-value="">
-            <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Objetivo</label>
+            <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Objetivo</label>
             <button type="button" class="rb-select-trigger w-full mt-1.5 flex items-center justify-between px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-sm text-left" onclick="rbToggleSelect(this)">
-              <span class="rb-select-label text-bianca-text-secondary">Selecione</span>
+              <span class="rb-select-label text-bianca-text-tertiary">Selecione</span>
               <svg class="rb-select-chevron w-4 h-4 text-bianca-text-secondary" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <div class="rb-select-panel hidden bg-bianca-bg-card border border-bianca-border rounded-xl shadow-xl shadow-black/50 overflow-hidden">
@@ -310,16 +377,16 @@
           </div>
 
           <div id="rb-f-cliente-wrap" class="rb-hidden">
-            <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Cliente</label>
+            <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Cliente</label>
             <div id="rb-f-cliente" class="rb-select" data-value="">
               <button type="button" class="rb-select-trigger w-full mt-1.5 flex items-center justify-between px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-sm text-left" onclick="rbToggleSelect(this)">
-                <span class="rb-select-label text-bianca-text-secondary">Selecione o cliente</span>
+                <span class="rb-select-label text-bianca-text-tertiary">Selecione o cliente</span>
                 <svg class="rb-select-chevron w-4 h-4 text-bianca-text-secondary" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
               <div class="rb-select-panel hidden bg-bianca-bg-card border border-bianca-border rounded-xl shadow-xl shadow-black/50 overflow-hidden">
                 <div class="p-2 border-b border-bianca-border">
                   <input type="text" placeholder="Buscar cliente..." oninput="rbFilterClienteOptions(this.value)"
-                    class="rb-input w-full px-3 py-1.5 rounded-lg bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-secondary focus:outline-none focus:border-bianca-brand" />
+                    class="rb-input w-full px-3 py-1.5 rounded-lg bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand" />
                 </div>
                 <div id="rb-cliente-options-list" class="max-h-52 overflow-y-auto"></div>
               </div>
@@ -327,25 +394,25 @@
           </div>
 
           <div id="rb-f-nome-objetivo-wrap" class="rb-hidden">
-            <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Nome do evento</label>
-            <input id="rb-f-nome-objetivo" placeholder="Ex: Feira tecnológica" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-secondary focus:outline-none focus:border-bianca-brand" />
+            <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Nome do evento</label>
+            <input id="rb-f-nome-objetivo" placeholder="Ex: Feira tecnológica" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand" />
           </div>
 
           <div class="grid grid-cols-[1fr_84px] gap-3">
             <div>
-              <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Cidade</label>
-              <input id="rb-f-cidade" placeholder="Nome da cidade" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-secondary focus:outline-none focus:border-bianca-brand" />
+              <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Cidade</label>
+              <input id="rb-f-cidade" placeholder="Nome da cidade" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand" />
             </div>
             <div>
-              <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">UF</label>
-              <input id="rb-f-uf" placeholder="UF" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-secondary focus:outline-none focus:border-bianca-brand" />
+              <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">UF</label>
+              <input id="rb-f-uf" placeholder="UF" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand" />
             </div>
           </div>
         </div>
 
         <div id="rb-simples-fields" class="rb-hidden">
-          <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Descrição</label>
-          <textarea id="rb-f-descricao" rows="4" placeholder="Descreva a despesa..." class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-secondary focus:outline-none focus:border-bianca-brand resize-none"></textarea>
+          <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Descrição</label>
+          <textarea id="rb-f-descricao" rows="4" placeholder="Descreva a despesa..." class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand resize-none"></textarea>
         </div>
 
         <div class="flex gap-3">
@@ -356,7 +423,7 @@
 
       <div id="rb-step-3" class="rb-hidden p-6 space-y-4">
         <div id="rb-viagem-step3">
-          <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide mb-2 block">Reembolsos solicitados</label>
+          <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide mb-2 block">Reembolsos solicitados</label>
           <div class="space-y-2.5">
             <label class="rb-check-label flex items-center gap-2.5 text-sm cursor-pointer">
               <input id="rb-f-cat-transporte" type="checkbox" class="rb-check-input" onchange="document.getElementById('rb-transporte-meio').classList.toggle('rb-hidden', !this.checked)" />
@@ -366,7 +433,7 @@
             <div id="rb-transporte-meio" class="rb-hidden pl-8 space-y-3">
               <div id="rb-f-meio" class="rb-select" data-value="">
                 <button type="button" class="rb-select-trigger w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-sm text-left" onclick="rbToggleSelect(this)">
-                  <span class="rb-select-label text-bianca-text-secondary">Meio de transporte</span>
+                  <span class="rb-select-label text-bianca-text-tertiary">Meio de transporte</span>
                   <svg class="rb-select-chevron w-4 h-4 text-bianca-text-secondary" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
                 <div class="rb-select-panel hidden bg-bianca-bg-card border border-bianca-border rounded-xl shadow-xl shadow-black/50 overflow-hidden">
@@ -378,8 +445,8 @@
                 </div>
               </div>
               <div id="rb-f-km-wrap" class="rb-hidden">
-                <label class="text-xs font-medium text-bianca-text-secondary uppercase tracking-wide">Quilometragem</label>
-                <input id="rb-f-km" placeholder="Ex: 120" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-secondary focus:outline-none focus:border-bianca-brand" />
+                <label class="text-xs font-semibold text-bianca-text-tertiary uppercase tracking-wide">Quilometragem</label>
+                <input id="rb-f-km" placeholder="Ex: 120" class="rb-input w-full mt-1.5 px-4 py-2.5 rounded-xl bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-sm placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand" />
               </div>
             </div>
             <label class="rb-check-label flex items-center gap-2.5 text-sm cursor-pointer">
@@ -412,41 +479,41 @@
   <div id="rb-details-overlay" class="rb-overlay fixed inset-0 bg-black/70 items-center justify-center z-50 p-6">
     <div class="bg-bianca-bg-card border border-bianca-border rounded-2xl overflow-hidden w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl shadow-black/60">
       <div class="flex items-center justify-between px-6 py-5 border-b border-bianca-border shrink-0">
-        <h3 class="text-lg font-semibold">Detalhes da solicitação</h3>
+        <h3 class="text-lg font-bold">Detalhes da solicitação</h3>
         <button class="text-bianca-text-secondary hover:text-bianca-text-primary transition-colors" onclick="closeOverlay('rb-details-overlay')">✕</button>
       </div>
       <div class="p-6 space-y-5 overflow-y-auto">
         <div id="rb-d-status" class="flex items-center gap-2 flex-wrap"></div>
-        <div><p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Solicitante</p><p id="rb-d-solicitante" class="text-sm font-medium"></p></div>
+        <div><p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Solicitante</p><p id="rb-d-solicitante" class="text-sm font-medium"></p></div>
         <div id="rb-d-viagem-info">
           <div class="h-px bg-bianca-border"></div>
           <div class="grid grid-cols-2 gap-4 pt-5">
-            <div><p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Local</p><p id="rb-d-local" class="text-sm font-medium"></p></div>
-            <div><p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Viajantes</p><p id="rb-d-viajantes" class="text-sm font-medium"></p></div>
-            <div><p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Data de ida</p><p id="rb-d-ida" class="text-sm font-medium"></p></div>
-            <div><p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Data de volta</p><p id="rb-d-volta" class="text-sm font-medium"></p></div>
+            <div><p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Local</p><p id="rb-d-local" class="text-sm font-medium"></p></div>
+            <div><p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Viajantes</p><p id="rb-d-viajantes" class="text-sm font-medium font-mono"></p></div>
+            <div><p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Data de ida</p><p id="rb-d-ida" class="text-sm font-medium font-mono"></p></div>
+            <div><p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Data de volta</p><p id="rb-d-volta" class="text-sm font-medium font-mono"></p></div>
           </div>
           <div class="h-px bg-bianca-border mt-5"></div>
           <div class="grid grid-cols-2 gap-4 pt-5">
-            <div><p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Objetivo</p><p id="rb-d-objetivo" class="text-sm font-medium"></p></div>
-            <div><p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Nome do objetivo</p><p id="rb-d-nome-objetivo" class="text-sm font-medium"></p></div>
+            <div><p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Objetivo</p><p id="rb-d-objetivo" class="text-sm font-medium"></p></div>
+            <div><p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Nome do objetivo</p><p id="rb-d-nome-objetivo" class="text-sm font-medium"></p></div>
           </div>
         </div>
         <div id="rb-d-descricao-wrap" class="rb-hidden">
-          <p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Descrição</p>
+          <p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Descrição</p>
           <p id="rb-d-descricao" class="text-sm font-medium leading-relaxed"></p>
         </div>
         <div class="h-px bg-bianca-border"></div>
         <div class="space-y-3">
           <div>
-            <p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1.5">Comprovantes</p>
+            <p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1.5 font-bold">Comprovantes</p>
             <div id="rb-d-reembolsos" class="text-sm text-bianca-text-secondary space-y-1.5"></div>
           </div>
-          <div id="rb-d-meio-wrap"><p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Meio de transporte</p><p id="rb-d-meio" class="text-sm font-medium"></p></div>
-          <div id="rb-d-km-wrap" class="rb-hidden"><p class="text-[11px] text-bianca-text-secondary uppercase tracking-wide mb-1">Quilometragem</p><p id="rb-d-km" class="text-sm font-medium"></p></div>
+          <div id="rb-d-meio-wrap"><p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Meio de transporte</p><p id="rb-d-meio" class="text-sm font-medium"></p></div>
+          <div id="rb-d-km-wrap" class="rb-hidden"><p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-wide mb-1 font-bold">Quilometragem</p><p id="rb-d-km" class="text-sm font-medium font-mono"></p></div>
         </div>
         <div class="pt-2 border-t border-bianca-border">
-          <p class="text-[11px] text-bianca-text-secondary">A solicitação de reembolso é feita a cada 14 dias.</p>
+          <p class="text-[10.5px] text-bianca-text-tertiary">A solicitação de reembolso é feita a cada 14 dias.</p>
         </div>
         <button id="rb-d-anexar-btn" class="rb-hidden rb-btn-primary w-full px-5 py-2.5 rounded-xl bg-bianca-yellow text-bianca-bg-main text-sm font-semibold glow-yellow" onclick="openAttachModal()">
           Anexar comprovantes fiscais
@@ -460,7 +527,7 @@
     <div class="bg-bianca-bg-card border border-bianca-border rounded-2xl overflow-hidden w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl shadow-black/60">
       <div class="flex items-center justify-between px-6 py-5 border-b border-bianca-border shrink-0">
         <div>
-          <h3 class="text-lg font-semibold">Anexar comprovantes fiscais</h3>
+          <h3 class="text-lg font-bold">Anexar comprovantes fiscais</h3>
           <p class="text-xs text-bianca-text-secondary mt-0.5">Pode anexar mais de uma nota por categoria</p>
         </div>
         <button class="text-bianca-text-secondary hover:text-bianca-text-primary transition-colors" onclick="closeOverlay('rb-attach-overlay')">✕</button>
@@ -476,28 +543,264 @@
 
 </div>
 
+<!-- ============================================================
+     VISÃO FINANCEIRO — mostrada em vez da visão de colaborador
+     quando o usuário logado tem o campo "Reembolso" = true no
+     User (ver rbInit() no script). Vê TODOS os reembolsos (não só
+     os do usuário logado) e pode aprovar/negar. ============ -->
+<div id="rb-page-financeiro" class="rb-hidden p-10 space-y-8">
+
+  <!-- HEADER -->
+  <div class="flex items-end justify-between flex-wrap gap-4 pb-5 border-b border-bianca-border rb-enter">
+    <div class="space-y-1.5">
+      <p class="text-[10.5px] text-bianca-text-tertiary uppercase tracking-[.18em] font-bold">Pagamentos · Reembolsos</p>
+      <h1 class="text-2xl font-bold tracking-tight">Reembolsos — Financeiro</h1>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="rb-pill-group" id="rb-fin-tab-bar">
+    <button class="rb-fin-tab-btn on" data-tab="todos" onclick="rbFinSetTab('todos')">Solicitações</button>
+    <button class="rb-fin-tab-btn" data-tab="aberto" onclick="rbFinSetTab('aberto')">Em aberto</button>
+    <button class="rb-fin-tab-btn" data-tab="pagos" onclick="rbFinSetTab('pagos')">Pagos</button>
+  </div>
+
+  <!-- KPIs — um conjunto de cards diferente por aba (Solicitações = 1 card,
+       Em aberto = 2, Pagos = 3), trocado em rbFinSetTab(). Cada valor é
+       recalculado em rbFinUpdateKpis() a partir dos dados reais, nunca fixo. -->
+  <div id="rb-fin-kpi-todos" class="rb-enter" style="animation-delay:.05s">
+    <div class="rb-card rb-kpi relative overflow-hidden bg-bianca-bg-card border border-bianca-border rounded-2xl p-5" style="--kpi-color:#09bc8a;">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="rb-kpi-chip"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12M10 4v12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="text-[11px] uppercase tracking-wide text-bianca-text-secondary font-bold">Número de reembolsos</span>
+      </div>
+      <p id="rb-fin-kpi-todos-count" class="font-mono text-[28px] font-bold">—</p>
+      <svg class="absolute right-5 top-1/2 -translate-y-1/2 w-16 h-16 opacity-[0.07] pointer-events-none" viewBox="0 0 24 24" fill="none" style="color:#09bc8a">
+        <path d="M6 2h12v20l-3-2-3 2-3-2-3 2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+        <path d="M9 7h6M9 11h6M9 15h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div>
+
+  <div id="rb-fin-kpi-aberto" class="rb-hidden grid grid-cols-1 md:grid-cols-2 gap-3.5 rb-enter" style="animation-delay:.05s">
+    <div class="rb-card rb-kpi relative overflow-hidden bg-bianca-bg-card border border-bianca-border rounded-2xl p-5" style="--kpi-color:#3a7ef0;">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="rb-kpi-chip"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l2.6 2.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="text-[11px] uppercase tracking-wide text-bianca-text-secondary font-bold">Número de reembolsos solicitados</span>
+      </div>
+      <p id="rb-fin-kpi-aberto-count" class="font-mono text-[28px] font-bold">—</p>
+      <svg class="absolute right-5 top-1/2 -translate-y-1/2 w-16 h-16 opacity-[0.07] pointer-events-none" viewBox="0 0 20 20" fill="none" style="color:#3a7ef0"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.4"/><path d="M10 6v4l2.6 2.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </div>
+    <div class="rb-card rb-kpi relative overflow-hidden bg-bianca-bg-card border border-bianca-border rounded-2xl p-5" style="--kpi-color:#09bc8a;">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="rb-kpi-chip"><svg viewBox="0 0 24 24" fill="none"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <span id="rb-fin-kpi-aberto-total-label" class="text-[11px] uppercase tracking-wide text-bianca-text-secondary font-bold">Total solicitado</span>
+      </div>
+      <p id="rb-fin-kpi-aberto-total" class="font-mono text-[28px] font-bold">—</p>
+      <svg class="absolute right-5 top-1/2 -translate-y-1/2 w-16 h-16 opacity-[0.07] pointer-events-none" viewBox="0 0 24 24" fill="none" style="color:#09bc8a"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+  </div>
+
+  <div id="rb-fin-kpi-pagos" class="rb-hidden grid grid-cols-1 md:grid-cols-3 gap-3.5 rb-enter" style="animation-delay:.05s">
+    <div class="rb-card rb-kpi relative overflow-hidden bg-bianca-bg-card border border-bianca-border rounded-2xl p-5" style="--kpi-color:#09bc8a;">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="rb-kpi-chip"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.6"/><path d="M6.5 10.2l2.3 2.3L13.7 7.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <span class="text-[11px] uppercase tracking-wide text-bianca-text-secondary font-bold">Número de reembolsos pagos</span>
+      </div>
+      <p id="rb-fin-kpi-pagos-count" class="font-mono text-[28px] font-bold">—</p>
+      <svg class="absolute right-5 top-1/2 -translate-y-1/2 w-16 h-16 opacity-[0.07] pointer-events-none" viewBox="0 0 20 20" fill="none" style="color:#09bc8a"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 10.2l2.3 2.3L13.7 7.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="rb-card rb-kpi relative overflow-hidden bg-bianca-bg-card border border-bianca-border rounded-2xl p-5" style="--kpi-color:#09bc8a;">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="rb-kpi-chip"><svg viewBox="0 0 24 24" fill="none"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <span id="rb-fin-kpi-pagos-total-label" class="text-[11px] uppercase tracking-wide text-bianca-text-secondary font-bold">Total pago no mês</span>
+      </div>
+      <p id="rb-fin-kpi-pagos-total" class="font-mono text-[28px] font-bold">—</p>
+      <svg class="absolute right-5 top-1/2 -translate-y-1/2 w-16 h-16 opacity-[0.07] pointer-events-none" viewBox="0 0 24 24" fill="none" style="color:#09bc8a"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="rb-card bg-bianca-bg-card border border-bianca-border rounded-2xl p-5">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="rb-kpi-chip" style="--kpi-color:#09bc8a;"><svg viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 8h14M7 2v3M13 2v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="text-[11px] uppercase tracking-wide text-bianca-text-secondary font-bold">Datas de pagamento</span>
+      </div>
+      <div class="flex gap-2.5">
+        <div class="flex-1 text-center bg-bianca-bg-main border border-bianca-border-soft rounded-lg py-1.5">
+          <p class="text-[9px] text-bianca-text-tertiary uppercase tracking-wide">Dia</p>
+          <p class="text-sm font-bold text-bianca-brand font-mono">14</p>
+        </div>
+        <div class="flex-1 text-center bg-bianca-bg-main border border-bianca-border-soft rounded-lg py-1.5">
+          <p class="text-[9px] text-bianca-text-tertiary uppercase tracking-wide">Dia</p>
+          <p class="text-sm font-bold text-bianca-brand font-mono">28</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOOLBAR / BUSCA -->
+  <div class="flex items-center justify-end rb-enter" style="animation-delay:.1s">
+    <div class="relative">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-[13px] h-[13px] text-bianca-text-tertiary pointer-events-none" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.6"/><path d="M17 17l-3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <input id="rb-fin-search" type="text" placeholder="Nome do colaborador" oninput="rbFinOnSearchInput()"
+        class="rb-input pl-9 pr-4 py-2.5 rounded-xl bg-bianca-bg-card border border-bianca-border text-bianca-text-primary text-[12.5px] placeholder:text-bianca-text-tertiary focus:outline-none focus:border-bianca-brand w-64" />
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="bg-bianca-bg-card border border-bianca-border rounded-2xl overflow-hidden rb-enter" style="animation-delay:.15s">
+    <div class="px-5 py-4 border-b border-bianca-border flex items-center justify-between">
+      <p id="rb-fin-table-title" class="text-[13.5px] font-bold">Reembolsos solicitados</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[640px]">
+        <thead>
+          <tr class="bg-bianca-bg-hover">
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2">Colaborador</th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2">Tipo</th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2">Data</th>
+            <th class="text-left text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2">Status</th>
+            <th class="text-right text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2">Valor</th>
+            <th class="text-right text-[10px] uppercase tracking-[.09em] text-bianca-text-tertiary font-bold px-5 py-2">Ações</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-bianca-border-soft" id="rb-fin-tbody"></tbody>
+      </table>
+    </div>
+    <div id="rb-fin-empty" class="rb-hidden px-5 py-10 text-center text-sm text-bianca-text-secondary">Nenhum reembolso encontrado com esse filtro.</div>
+    <div id="rb-fin-pagination" class="rb-hidden flex items-center justify-between px-5 py-3 border-t border-bianca-border flex-wrap gap-3">
+      <button id="rb-fin-page-prev" class="px-3.5 py-1.5 rounded-lg border border-bianca-border text-xs font-medium text-bianca-text-secondary hover:bg-bianca-bg-hover hover:text-bianca-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors" onclick="rbFinChangePage(-1)">← Anterior</button>
+      <div class="flex items-center gap-2.5">
+        <p id="rb-fin-page-label" class="text-xs text-bianca-text-secondary font-mono"></p>
+        <span class="text-bianca-text-tertiary text-xs">Ir para página</span>
+        <input id="rb-fin-page-jump" type="number" min="1" class="rb-input w-14 px-2 py-1 rounded-lg bg-bianca-bg-main border border-bianca-border text-bianca-text-primary text-xs font-mono focus:outline-none focus:border-bianca-brand" onkeydown="if(event.key==='Enter'){rbFinJumpToPage(this.value); this.value='';}" />
+      </div>
+      <button id="rb-fin-page-next" class="px-3.5 py-1.5 rounded-lg border border-bianca-border text-xs font-medium text-bianca-text-secondary hover:bg-bianca-bg-hover hover:text-bianca-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors" onclick="rbFinChangePage(1)">Próxima →</button>
+    </div>
+  </div>
+
+  <!-- DETAILS MODAL (FINANCEIRO) -->
+  <div id="rb-fin-details-overlay" class="rb-overlay fixed inset-0 bg-black/70 items-center justify-center z-50 p-6">
+    <div class="bg-bianca-bg-card border border-bianca-border rounded-2xl overflow-hidden w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl shadow-black/60">
+      <div class="flex items-center justify-between px-6 py-5 border-b border-bianca-border shrink-0">
+        <h3 class="text-lg font-bold">Detalhes do Reembolso</h3>
+        <button class="text-bianca-text-secondary hover:text-bianca-text-primary transition-colors" onclick="closeOverlay('rb-fin-details-overlay')">✕</button>
+      </div>
+      <div class="p-6 space-y-4 overflow-y-auto">
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-bianca-bg-main border border-bianca-border-soft rounded-xl p-3.5">
+            <div class="flex items-center gap-1.5 text-[10px] text-bianca-text-tertiary uppercase tracking-wide font-bold mb-1.5">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="6.5" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 17c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              Colaborador
+            </div>
+            <p id="rb-fin-d-colaborador" class="text-sm font-semibold"></p>
+            <p id="rb-fin-d-lider" class="text-[11px] text-bianca-text-secondary mt-0.5"></p>
+          </div>
+          <div class="bg-bianca-bg-main border border-bianca-border-soft rounded-xl p-3.5">
+            <div class="flex items-center gap-1.5 text-[10px] text-bianca-text-tertiary uppercase tracking-wide font-bold mb-1.5">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="none"><path d="M5 2.5h7l3 3v12h-10z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7.5 9h5M7.5 12h5M7.5 15h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              Tipo
+            </div>
+            <p id="rb-fin-d-tipo" class="text-sm font-semibold"></p>
+          </div>
+          <div class="bg-bianca-bg-main border border-bianca-border-soft rounded-xl p-3.5">
+            <div class="flex items-center gap-1.5 text-[10px] text-bianca-text-tertiary uppercase tracking-wide font-bold mb-1.5">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 8h14M7 2.5v3M13 2.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              Data de Criação
+            </div>
+            <p id="rb-fin-d-data" class="text-sm font-semibold font-mono"></p>
+          </div>
+          <div class="bg-bianca-bg-main border border-bianca-border-soft rounded-xl p-3.5">
+            <div class="flex items-center gap-1.5 text-[10px] text-bianca-text-tertiary uppercase tracking-wide font-bold mb-1.5">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Valor
+            </div>
+            <p id="rb-fin-d-valor" class="text-sm font-semibold font-mono"></p>
+          </div>
+        </div>
+
+        <div class="bg-bianca-bg-main border border-bianca-border-soft rounded-xl p-3.5">
+          <p class="text-[10px] text-bianca-text-tertiary uppercase tracking-wide font-bold mb-1.5">Cliente</p>
+          <p id="rb-fin-d-cliente" class="text-sm text-bianca-text-secondary"></p>
+        </div>
+
+        <div class="bg-bianca-bg-main border border-bianca-border-soft rounded-xl p-3.5">
+          <p class="text-[10px] text-bianca-text-tertiary uppercase tracking-wide font-bold mb-1.5">Descrição</p>
+          <p id="rb-fin-d-descricao" class="text-sm text-bianca-text-secondary leading-relaxed"></p>
+        </div>
+
+        <div class="bg-bianca-bg-main border border-bianca-border-soft rounded-xl p-3.5">
+          <p class="text-[10px] text-bianca-text-tertiary uppercase tracking-wide font-bold mb-2.5">Status Solicitação</p>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <p class="text-[10px] text-bianca-text-tertiary flex items-center gap-1"><svg class="w-3 h-3" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v4l2.6 2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Status Solicitação</p>
+              <div id="rb-fin-d-status-solicitacao"></div>
+              <p id="rb-fin-d-apr-solicitacao" class="text-[11px] text-bianca-text-tertiary font-mono"></p>
+            </div>
+            <div class="space-y-1">
+              <p class="text-[10px] text-bianca-text-tertiary flex items-center gap-1"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Status Financeiro</p>
+              <div id="rb-fin-d-status-financeiro"></div>
+              <p id="rb-fin-d-apr-financeiro" class="text-[11px] text-bianca-text-tertiary font-mono"></p>
+            </div>
+          </div>
+        </div>
+
+        <div id="rb-fin-d-anexos-wrap" class="rb-hidden bg-bianca-bg-main border border-bianca-border-soft rounded-xl p-3.5">
+          <p class="text-[10px] text-bianca-text-tertiary uppercase tracking-wide font-bold mb-2">Anexos</p>
+          <div id="rb-fin-d-anexos" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <label id="rb-fin-d-check-wrap" class="rb-hidden rb-check-label flex items-center gap-2.5 text-xs text-bianca-text-secondary cursor-pointer">
+          <input id="rb-fin-d-check" type="checkbox" class="rb-check-input" />
+          <span class="rb-check-box"><svg class="rb-check-icon" viewBox="0 0 12 10" fill="none"><path d="M1 5L4.5 8.5L11 1.5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          Eu verifiquei os comprovantes anexados
+        </label>
+
+        <div id="rb-fin-d-actions" class="rb-hidden flex gap-3 pt-1">
+          <button id="rb-fin-d-deny-btn" class="flex-1 px-5 py-2.5 rounded-xl bg-bianca-red text-white text-sm font-semibold transition-transform hover:-translate-y-px disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0" onclick="rbFinDecide('negar')">Negar solicitação</button>
+          <button id="rb-fin-d-approve-btn" class="rb-btn-primary flex-1 px-5 py-2.5 rounded-xl bg-bianca-brand text-bianca-bg-main text-sm font-semibold glow-brand disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none" onclick="rbFinDecide('aprovar')">Aprovar solicitação</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
 <script>
   // Contexto do usuário logado, lido dos parâmetros da URL (o Bubble monta o
   // <iframe src="...?uid=...&uname=...&cid=...&eid=..."> com dynamic data).
+  //
+  // Confirmado em 2026-09-01: o Bubble às vezes bagunça a tag <iframe> ao
+  // salvar o elemento HTML (já vimos atributos vizinhos se misturarem, ex.:
+  // title=" reembolsos"=""). Isso não é só cosmético — um "eid" chegou com
+  // ` title="` grudado no final (`1698...800 title="`), que o site mandava
+  // direto pro Bubble na criação do Reembolso, causando "object with this id
+  // does not exist" (o Bubble rejeitava certo — o valor sujo realmente não
+  // existe). rbCleanBubbleId() corta qualquer coisa depois do padrão de um
+  // unique id de verdade (dígitos + "x" + dígitos), então não importa que
+  // lixo venha grudado atrás, só o id limpo é usado.
+  function rbCleanBubbleId(raw) {
+    if (!raw) return '';
+    const m = raw.match(/^\d+x\d+/);
+    return m ? m[0] : raw.trim();
+  }
   const RB_PARAMS = new URLSearchParams(window.location.search);
   const RB_CTX = {
-    userId: RB_PARAMS.get('uid') || '',
-    userName: RB_PARAMS.get('uname') || '',
-    clienteId: RB_PARAMS.get('cid') || '',
-    empresaId: RB_PARAMS.get('eid') || '',
+    userId: rbCleanBubbleId(RB_PARAMS.get('uid')),
+    userName: (RB_PARAMS.get('uname') || '').trim(),
+    clienteId: rbCleanBubbleId(RB_PARAMS.get('cid')),
+    empresaId: rbCleanBubbleId(RB_PARAMS.get('eid')),
   };
-  if (!RB_CTX.userId) {
-    document.getElementById('rb-ctx-error').classList.remove('rb-hidden');
-  }
-
-  ['rb-action-overlay', 'rb-request-overlay', 'rb-details-overlay', 'rb-attach-overlay'].forEach(id => {
+  ['rb-action-overlay', 'rb-request-overlay', 'rb-details-overlay', 'rb-attach-overlay', 'rb-fin-details-overlay'].forEach(id => {
     const el = document.getElementById(id);
     if (el) document.body.appendChild(el);
   });
 
   /* ============ status (Solicitação + Financeiro são dois campos independentes) ============ */
+  // Tag compacta em caixa alta, no estilo "status-tag" do console financeiro
+  // (em vez do chip arredondado do site original) — mesma lógica de cores.
   const badge = (label, color) =>
-    `<span class="rb-chip px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-${color}/10 text-${color} border border-${color}/20">${label}</span>`;
+    `<span class="rb-chip inline-flex items-center px-2.5 py-1 rounded-md text-[10.5px] font-bold uppercase tracking-wide bg-${color}/10 text-${color} border border-${color}/20">${label}</span>`;
 
   const STATUS_COLORS = {
     'Enviado': 'bianca-blue',
@@ -591,6 +894,7 @@
   // riscos de ele também listar dados (não só criar).
   const RB_DATA_API_URL = 'https://nexiplay.com/version-93hzi/api/1.1/obj/Reembolso';
   const RB_API_TOKEN = '4a6bbc25ef41cda5bca86036a83e5f75';
+  const RB_USER_API_URL = 'https://nexiplay.com/version-93hzi/api/1.1/obj/User';
 
   let rbRequests = [];
 
@@ -646,27 +950,19 @@
     document.getElementById('rb-action-count').textContent = rbRequests.filter(r => r.needsAction).length;
   }
 
-  /* ============ filters ============ */
+  /* ============ filters (segmented control / pill-group) ============ */
   let rbActiveFilter = 'todos';
-  const filterStyles = {
-    idle: 'bg-bianca-bg-card border border-bianca-border text-bianca-text-secondary hover:bg-bianca-bg-hover hover:text-bianca-text-primary',
-    todos: 'bg-bianca-brand/15 border border-bianca-brand/30 text-bianca-brand',
-    acao: 'bg-bianca-yellow/15 border border-bianca-yellow/30 text-bianca-yellow',
-    andamento: 'bg-bianca-blue/15 border border-bianca-blue/30 text-bianca-blue',
-    concluidos: 'bg-bianca-brand/15 border border-bianca-brand/30 text-bianca-brand',
-  };
-  const filterLabels = { todos: 'Mostrando todos', acao: 'Filtrando: precisa de ação', andamento: 'Filtrando: em andamento', concluidos: 'Filtrando: concluídos' };
 
   function setFilter(name) {
     rbCurrentPage = 1;
     rbActiveFilter = name;
     document.querySelectorAll('.rb-filter-btn').forEach(btn => {
-      const f = btn.dataset.filter;
-      btn.className = 'rb-chip rb-filter-btn px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ' + (f === name ? filterStyles[f] : filterStyles.idle);
+      btn.classList.toggle('on', btn.dataset.filter === name);
     });
     document.getElementById('rb-filter-label').textContent = name === 'todos' ? '' : filterLabels[name];
     renderTable();
   }
+  const filterLabels = { todos: 'Mostrando todos', acao: 'Filtrando: precisa de ação', andamento: 'Filtrando: em andamento', concluidos: 'Filtrando: concluídos' };
 
   /* ============ table (com paginação) ============ */
   const RB_PAGE_SIZE = 5;
@@ -689,19 +985,19 @@
     const tbody = document.getElementById('rb-tbody');
     tbody.innerHTML = pageItems.map(r => {
       const i = rbRequests.indexOf(r);
-      const rowExtra = r.needsAction ? 'bg-bianca-yellow/[0.03] border-l-2 border-l-yellow' : '';
+      const rowExtra = r.needsAction ? 'bg-bianca-yellow/[0.03] border-l-2 border-l-bianca-yellow' : '';
       return `
       <tr class="rb-row cursor-pointer hover:bg-bianca-bg-hover ${rowExtra}" onclick="openDetails(${i})">
         <td class="px-5 py-4"><div class="flex items-center gap-2.5">
-          <div class="w-7 h-7 rounded-full bg-bianca-bg-hover border border-bianca-border flex items-center justify-center text-[11px] font-semibold text-bianca-text-secondary">${r.nome.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
+          <div class="w-7 h-7 rounded-full bg-bianca-bg-hover border border-bianca-border flex items-center justify-center text-[11px] font-bold text-bianca-text-secondary font-mono">${r.nome.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
           <span class="text-sm font-medium">${r.nome}</span></div></td>
         <td class="px-5 py-4 text-sm text-bianca-text-secondary">${r.tipo}</td>
-        <td class="px-5 py-4 text-sm text-bianca-text-secondary">${r.criacao}</td>
+        <td class="px-5 py-4 text-sm text-bianca-text-secondary font-mono">${r.criacao}</td>
         <td class="px-5 py-4">${statusBadge(r.statusSolicitacao)}</td>
-        <td class="px-5 py-4 text-sm text-bianca-text-secondary">${r.aprSolicitacao}</td>
+        <td class="px-5 py-4 text-sm text-bianca-text-secondary font-mono">${r.aprSolicitacao}</td>
         <td class="px-5 py-4">${statusBadge(r.statusFinanceiro)}</td>
-        <td class="px-5 py-4 text-sm text-bianca-text-secondary">${r.aprFinanceiro}</td>
-        <td class="px-5 py-4 text-sm text-right ${r.valor ? 'font-medium' : 'text-bianca-text-secondary'}">${r.valor || '—'}</td>
+        <td class="px-5 py-4 text-sm text-bianca-text-secondary font-mono">${r.aprFinanceiro}</td>
+        <td class="px-5 py-4 text-sm text-right font-mono ${r.valor ? 'font-semibold' : 'text-bianca-text-secondary'}">${r.valor || '—'}</td>
         <td class="px-5 py-4 text-right"><span class="text-bianca-brand text-sm font-medium hover:underline">Detalhes</span></td>
       </tr>`;
     }).join('');
@@ -729,7 +1025,7 @@
       <div class="rb-row flex items-center justify-between px-4 py-3 rounded-xl border border-bianca-border cursor-pointer hover:bg-bianca-bg-hover" onclick="closeOverlay('rb-action-overlay'); openDetails(${i})">
         <div>
           <p class="text-sm font-medium">${r.nome} — ${r.tipo}</p>
-          <p class="text-xs text-bianca-text-secondary">${r.criacao} · ${r.actionLabel}</p>
+          <p class="text-xs text-bianca-text-secondary font-mono">${r.criacao} · ${r.actionLabel}</p>
         </div>
         <span class="text-bianca-text-secondary">›</span>
       </div>
@@ -801,15 +1097,8 @@
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
-  // Confirmado em 2026-08-18: esse workflow não existe em "version-test" (dava
-  // 404 "Workflow not found") — só existe em "version-93hzi", o mesmo ambiente
-  // usado pela Data API.
-  // Workflow reconstruído do zero em 2026-08-18 depois de descobrir a causa raiz:
-  // o parâmetro de arquivo não podia estar marcado como "Is a list/array" (senão
-  // o Bubble só aceita URLs prontas, não upload {filename, contents}). Endpoint
-  // ficou com esse nome ("teste-anexo-simples") porque foi construído como teste
-  // isolado primeiro — funciona igual, mas pode ser renomeado no Bubble se quiser
-  // um nome mais descritivo (só trocar aqui também se renomear).
+  // Mesmo workflow do index.html — ver reembolso.md, seção "A saga do upload",
+  // pro histórico de por que o parâmetro de arquivo não pode ser lista.
   const RB_ANEXO_URL = 'https://nexiplay.com/version-93hzi/api/1.1/wf/teste-anexo-simples';
   const TIPO_CATEGORIAS = {
     'Viagem': ['Transporte', 'Alimentação', 'Estadia'],
@@ -829,8 +1118,8 @@
     document.getElementById('rb-attach-body').innerHTML = categorias.map(cat => `
       <div>
         <div class="flex items-center justify-between mb-2">
-          <p class="text-sm font-medium">${cat}</p>
-          <p class="text-[11px] text-bianca-text-secondary">pode enviar mais de um arquivo</p>
+          <p class="text-sm font-semibold">${cat}</p>
+          <p class="text-[11px] text-bianca-text-tertiary">pode enviar mais de um arquivo</p>
         </div>
         <div id="rb-dz-${cat}" class="rb-dropzone border border-dashed border-bianca-border rounded-xl p-5 text-center cursor-pointer"
              onclick="document.getElementById('rb-file-${cat}').click()"
@@ -838,7 +1127,7 @@
              ondragleave="this.classList.remove('rb-dragover')"
              ondrop="rbHandleDrop(event, ${i}, '${cat}')">
           <p class="text-sm text-bianca-text-secondary">Arraste os arquivos aqui ou <span class="text-bianca-brand font-medium">clique para selecionar</span></p>
-          <p class="text-[11px] text-bianca-text-secondary mt-1">PDF, JPG ou PNG</p>
+          <p class="text-[11px] text-bianca-text-tertiary mt-1">PDF, JPG ou PNG</p>
           <input id="rb-file-${cat}" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" class="hidden" onchange="rbHandleFiles(this.files, ${i}, '${cat}')" />
         </div>
         <div id="rb-filelist-${cat}" class="space-y-1.5 mt-2"></div>
@@ -873,7 +1162,7 @@
         <div class="flex items-center gap-2 min-w-0">
           <span class="text-bianca-brand text-sm">📎</span>
           <span class="text-sm truncate">${f.name}</span>
-          <span class="text-[11px] text-bianca-text-secondary shrink-0">${formatSize(f.size)}</span>
+          <span class="text-[11px] text-bianca-text-tertiary shrink-0 font-mono">${formatSize(f.size)}</span>
         </div>
         <button class="text-bianca-text-secondary hover:text-bianca-red transition-colors text-sm px-1" onclick="rbRemoveFile(${i}, '${cat}', ${idx})">✕</button>
       </div>`).join('');
@@ -945,7 +1234,7 @@
     document.getElementById('rb-step-fill-2').style.width = n >= 2 ? '100%' : '0%';
     document.getElementById('rb-step-fill-3').style.width = n >= 3 ? '100%' : '0%';
     [1, 2, 3].forEach(s => {
-      document.getElementById('rb-step-label-' + s).className = 'text-xs font-medium ' + (s <= n ? 'text-bianca-text-primary' : 'text-bianca-text-secondary');
+      document.getElementById('rb-step-label-' + s).className = 'text-xs font-semibold ' + (s <= n ? 'text-bianca-text-primary' : 'text-bianca-text-tertiary');
     });
   }
 
@@ -984,7 +1273,7 @@
     wrapper.dataset.value = value;
     const label = wrapper.querySelector('.rb-select-label');
     label.textContent = value;
-    label.classList.remove('text-bianca-text-secondary');
+    label.classList.remove('text-bianca-text-tertiary');
     label.classList.add('text-bianca-text-primary');
     wrapper.querySelector('.rb-select-panel').classList.add('hidden');
     wrapper.classList.remove('open');
@@ -1054,7 +1343,7 @@
     wrapper.dataset.value = el.dataset.clienteId;
     const label = wrapper.querySelector('.rb-select-label');
     label.textContent = el.textContent;
-    label.classList.remove('text-bianca-text-secondary');
+    label.classList.remove('text-bianca-text-tertiary');
     label.classList.add('text-bianca-text-primary');
     wrapper.querySelector('.rb-select-panel').classList.add('hidden');
     wrapper.classList.remove('open');
@@ -1087,26 +1376,33 @@
   });
 
   /* ============ overlays ============ */
-  // Um iframe nunca consegue cobrir visualmente elementos FORA dele (a barra
-  // lateral do Bubble, por exemplo) — é uma barreira do próprio navegador,
-  // não uma configuração de CSS. A solução é avisar o Bubble (via postMessage)
-  // sempre que um modal abrir/fechar, pra ele mesmo alternar o iframe entre
-  // "encaixado ao lado da barra" (normal) e "tela cheia por cima de tudo"
-  // (com um modal aberto). O contador evita mandar "fechou" só porque um
-  // modal fechou pra abrir outro na sequência (ex.: Detalhes → Anexar).
+  // 2026-09-01: abandonada a tentativa de fazer o modal cobrir a tela toda
+  // (inclusive a barra lateral do Bubble). A solução anterior fazia o
+  // iframe virar position:fixed cobrindo a tela inteira quando um modal
+  // abria — mas isso colocava o iframe por baixo de elementos do próprio
+  // Bubble com z-index alto (sidebar, header), fazendo esses elementos
+  // "vazarem" por cima da área que devia ser o fundo escuro do modal. Agora
+  // o modal só cobre a área do próprio iframe (que já é position:fixed
+  // inset:0 *dentro* do documento do iframe) — mais simples, sem depender
+  // de position:fixed escapando do iframe. O contador evita tirar o fundo
+  // opaco só porque um modal fechou pra abrir outro em sequência (ex.:
+  // Detalhes → Anexar).
   let rbOpenOverlayCount = 0;
 
   function rbOpenOverlay(id) {
     document.getElementById(id).classList.add('open');
     rbOpenOverlayCount++;
-    try { window.parent.postMessage({ type: 'rb-modal-open' }, '*'); } catch (e) {}
+    // Fundo opaco enquanto o modal está aberto — sem isso, a página do
+    // Bubble por trás aparece através do fundo escuro semi-transparente do
+    // modal (bg-black/70), já que o body é transparente por padrão.
+    document.body.classList.add('rb-overlay-active');
   }
 
   function closeOverlay(id) {
     document.getElementById(id).classList.remove('open');
     rbOpenOverlayCount = Math.max(0, rbOpenOverlayCount - 1);
     if (rbOpenOverlayCount === 0) {
-      try { window.parent.postMessage({ type: 'rb-modal-close' }, '*'); } catch (e) {}
+      document.body.classList.remove('rb-overlay-active');
       rbNotifyParentHeight();
     }
   }
@@ -1152,7 +1448,7 @@
     wrapper.dataset.value = '';
     const label = wrapper.querySelector('.rb-select-label');
     label.textContent = placeholder;
-    label.classList.add('text-bianca-text-secondary');
+    label.classList.add('text-bianca-text-tertiary');
     label.classList.remove('text-bianca-text-primary');
   }
 
@@ -1170,6 +1466,7 @@
   }
 
   function rbResetRequestForm() {
+    document.getElementById('rb-f-valor').value = '';
     document.getElementById('rb-f-viajantes').value = '';
     document.getElementById('rb-f-ida').value = '';
     document.getElementById('rb-f-volta').value = '';
@@ -1202,6 +1499,13 @@
     if (!tipo) errors.push('Selecione o tipo de reembolso.');
     if (!RB_CTX.userId) errors.push('Não foi possível identificar seu usuário. Acesse essa página pelo Nexiplay.');
 
+    // Valor solicitado — campo comum aos 3 tipos. Aceita "150", "150,00" ou
+    // "1.234,56" (formato BR): tira os pontos de milhar e troca a vírgula
+    // decimal por ponto antes de parsear.
+    const valorRaw = document.getElementById('rb-f-valor').value.trim();
+    const valorNum = parseFloat(valorRaw.replace(/\./g, '').replace(',', '.'));
+    if (!valorRaw || isNaN(valorNum) || valorNum <= 0) errors.push('Informe o valor solicitado.');
+
     // Payload comum a todos os tipos.
     const payload = {
       'Tipo de Reembolso': tipo,
@@ -1210,6 +1514,7 @@
       'user': RB_CTX.userId,
       'cliente': RB_CTX.clienteId || null,
       'empresa': RB_CTX.empresaId || null,
+      'Valor Total': !isNaN(valorNum) ? valorNum : null,
     };
 
     if (isViagem) {
@@ -1318,14 +1623,412 @@
     }
   }
 
-  loadReembolsos();
+  /* ============================================================
+     VISÃO FINANCEIRO — mesma Data API, mesmo token, mas sem o filtro
+     por "user" (vê TODOS os reembolsos) e com ações de aprovar/negar.
+     Ver reembolso.md pra decisão de manter escrita direta pela Data
+     API aqui também (risco aceito conscientemente em 2026-09-01).
+     ============================================================ */
+
+  // Resolve nome + líder de um User pelo id, com cache — usado tanto pro
+  // nome do colaborador na tabela/modal quanto pro nome do líder no modal.
+  const rbUserInfoCache = {};
+  async function rbGetUserInfo(userId) {
+    if (!userId) return null;
+    if (rbUserInfoCache[userId]) return rbUserInfoCache[userId];
+    try {
+      const res = await fetch(`${RB_USER_API_URL}/${userId}`, { headers: { Authorization: 'Bearer ' + RB_API_TOKEN } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const info = {
+        nome: (data.response && data.response['Nome completo']) || '—',
+        liderId: (data.response && data.response['Lider']) || null,
+        // "Reembolso" = true é quem tem permissão de administrar/aprovar
+        // reembolsos (confirmado batendo com usuários reais: "Financeiro",
+        // Guilherme Neira — o PM que aprovou o design desta página).
+        isFinanceiro: (data.response && data.response['Reembolso']) === true,
+      };
+      rbUserInfoCache[userId] = info;
+      return info;
+    } catch (err) {
+      console.error('Erro ao buscar usuário', err);
+      return null;
+    }
+  }
+
+  // Status na visão Financeiro NÃO usa o chip com fundo/borda (badge/statusBadge,
+  // que continuam iguais na visão colaborador) — o chefe pediu explicitamente o
+  // estilo da referência: ícone + texto colorido, sem caixa, empilhado, com a
+  // segunda linha (Status Financeiro) recuada de propósito pra sinalizar que é
+  // uma etapa posterior/diferente da primeira (Status Solicitação).
+  const STATUS_ICONS = {
+    'Enviado': '<svg class="w-3 h-3 shrink-0" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l2.6 2.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    'Não Enviado': '<svg class="w-3 h-3 shrink-0" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l2.6 2.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    'Aprovado': '<svg class="w-3 h-3 shrink-0" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.6"/><path d="M6.5 10.2l2.3 2.3L13.7 7.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    'Negado': '<svg class="w-3 h-3 shrink-0" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.6"/><path d="M7.3 7.3l5.4 5.4M12.7 7.3l-5.4 5.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    'Não Aprovado': '<svg class="w-3 h-3 shrink-0" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.6"/><path d="M7.3 7.3l5.4 5.4M12.7 7.3l-5.4 5.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  };
+  function rbFinStatusLine(value, indented) {
+    const color = STATUS_COLORS[value] || 'bianca-neutral';
+    const icon = STATUS_ICONS[value] || STATUS_ICONS['Enviado'];
+    return `<div class="flex items-center gap-1 ${indented ? 'text-[11px] font-semibold pl-3.5' : 'text-xs font-bold'} text-${color}">${icon}<span>${escapeHtml(value || '—')}</span></div>`;
+  }
+
+  // Do ponto de vista do financeiro (diferente de deriveGroup, que é do ponto
+  // de vista do colaborador): "Em aberto" só depois que o colaborador já
+  // anexou o comprovante (Status Financeiro = Enviado) E a solicitação em si
+  // já foi aprovada — aguardando só a conferência dos comprovantes. "Pagos"
+  // é quando o financeiro já aprovou o pagamento em si.
+  function deriveGroupFinanceiro(statusSolicitacao, statusFinanceiro) {
+    if (statusFinanceiro === 'Aprovado') return 'pagos';
+    if (statusSolicitacao === 'Aprovado' && statusFinanceiro === 'Enviado') return 'aberto';
+    return null;
+  }
+
+  // "Número de reembolsos" (aba Solicitações) — fórmula conferida direto na
+  // Data API contra a página de referência real (deu exatamente 53 nos dados
+  // de 2026-09-01): é só Status Financeiro = "Não Enviado" ou "Enviado", ou
+  // seja, o que ainda está em movimento no financeiro. Fica de fora: pago
+  // (Aprovado), negado (Negado) e cancelado (Cancelado) — mesmo que a
+  // solicitação em si tenha sido negada, se o financeiro já "fechou" aquele
+  // registro (Aprovado/Negado/Cancelado), ele não conta mais aqui.
+  function isReembolsoEmMovimento(statusFinanceiro) {
+    return statusFinanceiro === 'Não Enviado' || statusFinanceiro === 'Enviado';
+  }
+
+  function mapReembolsoApiFinanceiro(raw, userInfo) {
+    const statusSolicitacao = raw['Status Solicitacao'];
+    const statusFinanceiro = raw['Status Financeiro'];
+    const valorNum = raw['Valor Total'] || 0;
+    return {
+      id: raw._id,
+      userId: raw['user'] || null,
+      nome: (userInfo && userInfo.nome) || '—',
+      liderId: (userInfo && userInfo.liderId) || null,
+      tipo: raw['Tipo de Reembolso'] || '—',
+      criacaoRaw: raw['Data da solicitação'] || '',
+      criacao: formatDateBR(raw['Data da solicitação']) || '—',
+      valorNum,
+      valor: valorNum ? formatBRL(valorNum) : null,
+      statusSolicitacao,
+      aprSolicitacao: formatDateBR(raw['Data da Aprovação Solicitação']),
+      statusFinanceiro,
+      aprFinanceiroRaw: raw['Data de Aprovação Financeiro'] || '',
+      aprFinanceiro: formatDateBR(raw['Data de Aprovação Financeiro']),
+      clienteId: raw['cliente'] || null,
+      descricao: raw['Descrição Extra'] || raw['Descrição despesa'] || '',
+      group: deriveGroupFinanceiro(statusSolicitacao, statusFinanceiro),
+      anexosSalvos: {
+        'Transporte': raw['Anexo Transporte'] || [],
+        'Alimentação': raw['Anexo Alimentação'] || [],
+        'Estadia': raw['Anexo Estadia'] || [],
+        'Extra': raw['Anexo Extra'] || [],
+        'Despesa_direta': raw['Anexo Despesa_direta'] || [],
+      },
+    };
+  }
+
+  let rbFinRequests = [];
+  let rbFinActiveTab = 'todos';
+  let rbFinCurrentPage = 1;
+  const RB_FIN_PAGE_SIZE = 5; // mesmo tamanho da tabela de colaborador — tabela maior que isso passa da altura calculada do iframe e corta o final.
+  const rbFinTabLabels = { todos: 'Reembolsos solicitados', aberto: 'Reembolsos em aberto', pagos: 'Reembolsos pagos' };
+
+  async function loadReembolsosFinanceiro() {
+    const tbody = document.getElementById('rb-fin-tbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="px-5 py-8 text-center text-sm text-bianca-text-secondary">Carregando...</td></tr>';
+    document.getElementById('rb-fin-empty').classList.add('rb-hidden');
+
+    try {
+      // Sem constraint de "user" — visão administrativa vê os reembolsos de
+      // todo mundo. Pagina até 1000 registros (mesmo teto usado na busca de
+      // Clientes), igual ao padrão já estabelecido no resto do site.
+      const collected = [];
+      let cursor = 0;
+      for (let page = 0; page < 10; page++) {
+        const url = `${RB_DATA_API_URL}?limit=100&cursor=${cursor}`;
+        const res = await fetch(url, { headers: { Authorization: 'Bearer ' + RB_API_TOKEN } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const results = (data.response && data.response.results) || [];
+        collected.push(...results);
+        const remaining = (data.response && data.response.remaining) || 0;
+        cursor += results.length;
+        if (remaining <= 0 || results.length === 0) break;
+      }
+
+      // Resolve o nome de cada colaborador único referenciado (uma vez cada,
+      // em paralelo, com cache) — evita 1 fetch por linha da tabela.
+      const uniqueUserIds = [...new Set(collected.map(r => r['user']).filter(Boolean))];
+      const userInfos = {};
+      await Promise.all(uniqueUserIds.map(async id => { userInfos[id] = await rbGetUserInfo(id); }));
+
+      rbFinRequests = collected
+        .map(raw => mapReembolsoApiFinanceiro(raw, userInfos[raw['user']]))
+        .sort((a, b) => new Date(b.criacaoRaw) - new Date(a.criacaoRaw));
+
+      rbFinSetTab(rbFinActiveTab);
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6" class="px-5 py-8 text-center text-sm text-bianca-text-secondary">Erro ao carregar reembolsos. <a href="#" onclick="loadReembolsosFinanceiro(); return false;" class="text-bianca-brand hover:underline">Tentar novamente</a></td></tr>`;
+      console.error('Erro ao carregar reembolsos (financeiro)', err);
+    }
+  }
+
+  // Cada aba mostra um conjunto diferente de KPIs (o "quadrado" muda de
+  // verdade) — só um grupo fica visível por vez, o resto tem rb-hidden.
+  const RB_FIN_KPI_GROUPS = { todos: 'rb-fin-kpi-todos', aberto: 'rb-fin-kpi-aberto', pagos: 'rb-fin-kpi-pagos' };
+
+  function rbFinSetTab(tab) {
+    rbFinActiveTab = tab;
+    rbFinCurrentPage = 1;
+    document.querySelectorAll('.rb-fin-tab-btn').forEach(btn => btn.classList.toggle('on', btn.dataset.tab === tab));
+    document.getElementById('rb-fin-table-title').textContent = rbFinTabLabels[tab];
+    Object.entries(RB_FIN_KPI_GROUPS).forEach(([key, id]) => {
+      document.getElementById(id).classList.toggle('rb-hidden', key !== tab);
+    });
+    rbFinRenderTable();
+  }
+
+  // Recalcula os 3 conjuntos de KPI a partir dos dados reais (nunca fixo) —
+  // roda a cada render pra ficar sempre em sincronia com a busca também.
+  function rbFinUpdateKpis(search) {
+    const bySearch = r => r.nome.toLowerCase().includes(search);
+    const now = new Date();
+    const isCurrentMonth = (iso) => {
+      if (!iso) return false;
+      const d = new Date(iso);
+      return !isNaN(d) && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    };
+    const mesAtual = now.toLocaleDateString('pt-BR', { month: 'long' });
+    const mesAtualCap = mesAtual.charAt(0).toUpperCase() + mesAtual.slice(1);
+
+    // "Número de reembolsos" (Solicitações) = ver isReembolsoEmMovimento acima.
+    const todosF = rbFinRequests.filter(r => isReembolsoEmMovimento(r.statusFinanceiro) && bySearch(r));
+    document.getElementById('rb-fin-kpi-todos-count').textContent = todosF.length || '—';
+
+    // Em aberto = precisa de movimento do RH (comprovante já enviado,
+    // aguardando conferência financeira). Contagem e valor somam TODOS os
+    // itens desse grupo, sem recorte de mês — não foi pedido recorte aqui,
+    // só na aba Pagos (onde faz sentido: lá é sobre quando o dinheiro sai).
+    const abertoF = rbFinRequests.filter(r => r.group === 'aberto' && bySearch(r));
+    document.getElementById('rb-fin-kpi-aberto-count').textContent = abertoF.length || '—';
+    const totalAberto = abertoF.reduce((s, r) => s + r.valorNum, 0);
+    document.getElementById('rb-fin-kpi-aberto-total-label').textContent = 'Total solicitado';
+    document.getElementById('rb-fin-kpi-aberto-total').textContent = totalAberto ? formatBRL(totalAberto) : '—';
+
+    // "Pagos" é sempre relativo ao MÊS (contagem e valor) — quem paga é o
+    // financeiro, então a data que conta é "Data de Aprovação Financeiro",
+    // nunca a data da solicitação (que pode ser do mês anterior: pedido em
+    // agosto só é pago em setembro, por exemplo).
+    const pagosAll = rbFinRequests.filter(r => r.group === 'pagos' && bySearch(r));
+    const pagosMes = pagosAll.filter(r => isCurrentMonth(r.aprFinanceiroRaw));
+    document.getElementById('rb-fin-kpi-pagos-count').textContent = pagosMes.length || '—';
+    const totalPagoMes = pagosMes.reduce((s, r) => s + r.valorNum, 0);
+    document.getElementById('rb-fin-kpi-pagos-total-label').textContent = `Total pago no mês - ${mesAtualCap}`;
+    document.getElementById('rb-fin-kpi-pagos-total').textContent = totalPagoMes ? formatBRL(totalPagoMes) : '—';
+  }
+
+  function rbFinRenderTable() {
+    const search = document.getElementById('rb-fin-search').value.toLowerCase();
+    // Aba "Solicitações" (todos) usa a mesma regra do KPI (isReembolsoEmMovimento)
+    // — tabela e card sempre com o mesmo número, nunca um "todos" mais largo
+    // que o outro.
+    const filtered = rbFinRequests.filter(r =>
+      (rbFinActiveTab === 'todos' ? isReembolsoEmMovimento(r.statusFinanceiro) : r.group === rbFinActiveTab) &&
+      r.nome.toLowerCase().includes(search)
+    );
+
+    document.getElementById('rb-fin-empty').classList.toggle('rb-hidden', filtered.length > 0);
+    rbFinUpdateKpis(search);
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / RB_FIN_PAGE_SIZE));
+    if (rbFinCurrentPage > totalPages) rbFinCurrentPage = totalPages;
+    const start = (rbFinCurrentPage - 1) * RB_FIN_PAGE_SIZE;
+    const pageItems = filtered.slice(start, start + RB_FIN_PAGE_SIZE);
+
+    const tbody = document.getElementById('rb-fin-tbody');
+    tbody.innerHTML = pageItems.map(r => {
+      const i = rbFinRequests.indexOf(r);
+      return `
+      <tr class="rb-row cursor-pointer hover:bg-bianca-bg-hover" onclick="rbFinOpenDetails(${i})">
+        <td class="px-5 py-2.5 text-sm font-medium">${escapeHtml(r.nome)}</td>
+        <td class="px-5 py-2.5 text-sm text-bianca-text-secondary">${r.tipo}</td>
+        <td class="px-5 py-2.5 text-sm text-bianca-text-secondary font-mono">${r.criacao}</td>
+        <td class="px-5 py-2.5"><div class="flex flex-col gap-0.5">${rbFinStatusLine(r.statusSolicitacao, false)}${rbFinStatusLine(r.statusFinanceiro, true)}</div></td>
+        <td class="px-5 py-2.5 text-sm text-right font-mono ${r.valor ? 'font-semibold' : 'text-bianca-text-secondary'}">${r.valor || '—'}</td>
+        <td class="px-5 py-2.5 text-right"><button class="px-3 py-1 rounded-lg border border-bianca-border text-xs font-semibold text-bianca-text-primary hover:bg-bianca-brand hover:text-bianca-bg-main hover:border-bianca-brand transition-colors" onclick="event.stopPropagation(); rbFinOpenDetails(${i})">Detalhes →</button></td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('rb-fin-pagination').classList.toggle('rb-hidden', filtered.length === 0);
+    document.getElementById('rb-fin-page-label').textContent = `Página ${rbFinCurrentPage} de ${totalPages}`;
+    document.getElementById('rb-fin-page-prev').disabled = rbFinCurrentPage <= 1;
+    document.getElementById('rb-fin-page-next').disabled = rbFinCurrentPage >= totalPages;
+  }
+
+  function rbFinChangePage(delta) {
+    rbFinCurrentPage += delta;
+    rbFinRenderTable();
+  }
+  function rbFinJumpToPage(val) {
+    const n = parseInt(val, 10);
+    if (!isNaN(n) && n >= 1) { rbFinCurrentPage = n; rbFinRenderTable(); }
+  }
+  function rbFinOnSearchInput() {
+    rbFinCurrentPage = 1;
+    rbFinRenderTable();
+  }
+
+  function rbFinOpenDetails(i) {
+    const r = rbFinRequests[i];
+    document.getElementById('rb-fin-d-colaborador').textContent = r.nome;
+
+    const liderEl = document.getElementById('rb-fin-d-lider');
+    if (r.liderId) {
+      liderEl.textContent = 'Líder: carregando...';
+      rbGetUserInfo(r.liderId).then(info => { liderEl.textContent = 'Líder: ' + (info ? info.nome : '—'); });
+    } else {
+      liderEl.textContent = '';
+    }
+
+    document.getElementById('rb-fin-d-tipo').textContent = r.tipo;
+    document.getElementById('rb-fin-d-data').textContent = r.criacao;
+    document.getElementById('rb-fin-d-valor').textContent = r.valor || '—';
+
+    const clienteEl = document.getElementById('rb-fin-d-cliente');
+    if (r.clienteId) {
+      clienteEl.textContent = 'Carregando...';
+      rbGetClienteName(r.clienteId).then(nome => { clienteEl.textContent = nome || '—'; });
+    } else {
+      clienteEl.textContent = '—';
+    }
+
+    document.getElementById('rb-fin-d-descricao').textContent = r.descricao || '—';
+
+    document.getElementById('rb-fin-d-status-solicitacao').innerHTML = rbFinStatusLine(r.statusSolicitacao, false);
+    document.getElementById('rb-fin-d-apr-solicitacao').textContent = r.aprSolicitacao || '-';
+    document.getElementById('rb-fin-d-status-financeiro').innerHTML = rbFinStatusLine(r.statusFinanceiro, false);
+    document.getElementById('rb-fin-d-apr-financeiro').textContent = r.aprFinanceiro || '-';
+
+    const anexosSalvos = Object.entries(r.anexosSalvos || {}).flatMap(([cat, urls]) => urls.map(url => ({ cat, url })));
+    const anexosWrap = document.getElementById('rb-fin-d-anexos-wrap');
+    const anexosEl = document.getElementById('rb-fin-d-anexos');
+    if (anexosSalvos.length) {
+      anexosWrap.classList.remove('rb-hidden');
+      anexosEl.innerHTML = anexosSalvos.map(({ cat, url }) => `
+        <a href="${escapeHtml(rbFileUrl(url))}" target="_blank" rel="noopener" class="rb-chip inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-bianca-bg-card border border-bianca-border text-xs text-bianca-text-primary hover:border-bianca-brand transition-colors">
+          <span>📎</span><span class="truncate max-w-[110px]">${escapeHtml(rbFileName(url))}</span>
+        </a>
+      `).join('');
+    } else {
+      anexosWrap.classList.add('rb-hidden');
+      anexosEl.innerHTML = '';
+    }
+
+    // Os botões trocam de alvo dependendo de qual decisão está pendente:
+    // enquanto a Solicitação em si não foi decidida, eles decidem a
+    // Solicitação; depois de aprovada, quando o comprovante já chegou
+    // (Financeiro = Enviado), eles passam a decidir o pagamento em si
+    // (travado atrás do checkbox de conferência dos comprovantes).
+    let actionMode = null;
+    if (r.statusSolicitacao === 'Enviado') {
+      actionMode = 'solicitacao';
+    } else if (r.statusSolicitacao === 'Aprovado' && r.statusFinanceiro === 'Enviado') {
+      actionMode = 'financeiro';
+    }
+
+    const checkbox = document.getElementById('rb-fin-d-check');
+    checkbox.checked = false;
+    const gated = actionMode === 'financeiro';
+    document.getElementById('rb-fin-d-check-wrap').classList.toggle('rb-hidden', !gated);
+    document.getElementById('rb-fin-d-actions').classList.toggle('rb-hidden', !actionMode);
+    document.getElementById('rb-fin-d-approve-btn').disabled = gated;
+    document.getElementById('rb-fin-d-deny-btn').disabled = gated;
+
+    const overlay = document.getElementById('rb-fin-details-overlay');
+    overlay.dataset.reqIndex = i;
+    overlay.dataset.actionMode = actionMode || '';
+    rbOpenOverlay('rb-fin-details-overlay');
+  }
+
+  document.getElementById('rb-fin-d-check').addEventListener('change', function () {
+    // O gate só se aplica no modo financeiro (checkbox nem aparece no modo
+    // solicitação) — aprovar e negar o pagamento ficam travados até marcar.
+    document.getElementById('rb-fin-d-approve-btn').disabled = !this.checked;
+    document.getElementById('rb-fin-d-deny-btn').disabled = !this.checked;
+  });
+
+  async function rbFinDecide(decision) {
+    const overlay = document.getElementById('rb-fin-details-overlay');
+    const i = parseInt(overlay.dataset.reqIndex, 10);
+    const actionMode = overlay.dataset.actionMode;
+    const r = rbFinRequests[i];
+    if (!actionMode || !r) return;
+
+    const payload = {};
+    const nowIso = new Date().toISOString();
+    if (actionMode === 'solicitacao') {
+      payload['Status Solicitacao'] = decision === 'aprovar' ? 'Aprovado' : 'Negado';
+      if (decision === 'aprovar') payload['Data da Aprovação Solicitação'] = nowIso;
+    } else {
+      payload['Status Financeiro'] = decision === 'aprovar' ? 'Aprovado' : 'Não Aprovado';
+      if (decision === 'aprovar') payload['Data de Aprovação Financeiro'] = nowIso;
+    }
+
+    const approveBtn = document.getElementById('rb-fin-d-approve-btn');
+    const denyBtn = document.getElementById('rb-fin-d-deny-btn');
+    approveBtn.disabled = true;
+    denyBtn.disabled = true;
+
+    try {
+      const res = await fetch(`${RB_DATA_API_URL}/${r.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + RB_API_TOKEN },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`HTTP ${res.status}: ${body}`);
+      }
+      closeOverlay('rb-fin-details-overlay');
+      rbToast(decision === 'aprovar' ? 'Solicitação aprovada.' : 'Solicitação negada.', 'success');
+      await loadReembolsosFinanceiro();
+    } catch (err) {
+      rbToast('Erro ao registrar decisão. Tente novamente.' + (err.message ? ' (' + err.message + ')' : ''), 'error');
+      // Só voltam habilitados se o modo não exigir checkbox, ou se ele já estava marcado.
+      const stillGated = actionMode === 'financeiro' && !document.getElementById('rb-fin-d-check').checked;
+      approveBtn.disabled = stillGated;
+      denyBtn.disabled = stillGated;
+    }
+  }
+
+  // Ponto de entrada: decide, a partir do usuário logado, se mostra a visão
+  // de colaborador (padrão) ou a visão financeiro (quem tem "Reembolso" =
+  // true no User) — pedido explícito de checar o usuário logado pra decidir
+  // qual página mostrar, em vez de duas páginas/arquivos separados.
+  async function rbInit() {
+    if (!RB_CTX.userId) {
+      document.getElementById('rb-ctx-error').classList.remove('rb-hidden');
+      return;
+    }
+    const info = await rbGetUserInfo(RB_CTX.userId);
+    if (info && info.isFinanceiro) {
+      document.getElementById('rb-page-financeiro').classList.remove('rb-hidden');
+      loadReembolsosFinanceiro();
+    } else {
+      document.getElementById('rb-page').classList.remove('rb-hidden');
+      loadReembolsos();
+    }
+    rbNotifyParentHeight();
+  }
+  rbInit();
 
   // Avisa a página pai (Bubble) da altura real do conteúdo via postMessage —
   // não dá pra ler isso direto (frame.contentDocument) porque este site está
-  // num domínio diferente (Netlify vs nexiplay.com), e o navegador bloqueia
-  // acesso cross-origin ao DOM do iframe. Sem isso, o iframe fica com altura
-  // fixa e o conteúdo que passar disso ganha uma barra de rolagem própria,
-  // duplicada em relação à barra da página do Bubble.
+  // num domínio diferente do Bubble, e o navegador bloqueia acesso cross-origin
+  // ao DOM do iframe. Sem isso, o iframe fica com altura fixa e o conteúdo que
+  // passar disso ganha uma barra de rolagem própria, duplicada em relação à
+  // barra da página do Bubble.
   let rbResizeTimer = null;
   function rbNotifyParentHeight() {
     clearTimeout(rbResizeTimer);
@@ -1336,7 +2039,25 @@
   }
   window.addEventListener('load', rbNotifyParentHeight);
   window.addEventListener('resize', rbNotifyParentHeight);
-  new MutationObserver(rbNotifyParentHeight).observe(document.body, { childList: true, subtree: true });
+  // attributes/attributeFilter: pega também toggles de rb-hidden (mostrar/
+  // esconder os grupos de KPI ao trocar de aba, ou revelar a página inteira
+  // em rbInit) — só childList não bastava, esses são troca de classe, não
+  // inserção/remoção de elemento.
+  new MutationObserver(rbNotifyParentHeight).observe(document.body, {
+    childList: true, subtree: true, attributes: true, attributeFilter: ['class'],
+  });
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(rbNotifyParentHeight).observe(document.body);
+  }
+  // Rede de segurança: reenviar a altura a cada 1s, sempre. Cobre qualquer
+  // caso em que o Bubble recrie o elemento HTML (destruindo o iframe antigo
+  // e criando outro no lugar) depois do carregamento inicial — nesse caso
+  // nenhum dos gatilhos acima dispararia de novo (a mudança acontece do lado
+  // de fora do iframe, não dentro dele), mas o elemento novo do lado do
+  // Bubble sempre busca o iframe de novo a cada mensagem recebida (ver
+  // reembolso-elemento-html.html), então a próxima mensagem já cai no
+  // elemento certo.
+  setInterval(rbNotifyParentHeight, 1000);
 </script>
 </body>
 </html>
